@@ -6,6 +6,11 @@ from docx import Document
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 
 # -----------------------------
 # PAGE CONFIGURATION
@@ -42,6 +47,7 @@ st.sidebar.write("- Keyword extraction")
 st.sidebar.write("- Document classification")
 st.sidebar.write("- Agent decisions")
 st.sidebar.write("- Rule-based evaluation")
+st.sidebar.write("- Optional LLM-based evaluation")
 st.sidebar.write("- Similarity analysis")
 st.sidebar.write("- Downloadable reports")
 
@@ -51,6 +57,26 @@ st.sidebar.write("- Selin Keskin")
 
 st.sidebar.write("### Course")
 st.sidebar.write("SEN4018 - Agentic AI / Data Science Project")
+
+st.sidebar.divider()
+
+st.sidebar.write("### Optional LLM Evaluation")
+st.sidebar.write(
+    "Enter an OpenAI API key if you want the system to perform LLM-based evaluation. "
+    "If you leave it empty, the app will still work with rule-based evaluation."
+)
+
+openai_api_key = st.sidebar.text_input(
+    "OpenAI API Key",
+    type="password",
+    help="This key is used only during this session and is not stored in the code."
+)
+
+llm_model = st.sidebar.text_input(
+    "LLM Model",
+    value="gpt-4o-mini",
+    help="If this model is unavailable for your account, you can replace it with another available OpenAI model."
+)
 
 
 # -----------------------------
@@ -79,9 +105,10 @@ with st.expander("ℹ️ How does the system work?"):
         2. The system extracts readable text from the files.
         3. The extracted text is cleaned and preprocessed.
         4. The agent checks document length and number of uploaded files.
-        5. The system generates a summary, keywords, category, and evaluation score.
-        6. If multiple documents are uploaded, similarity analysis is performed.
-        7. The user can download document analysis and similarity reports.
+        5. The system generates a summary, keywords, category, and rule-based evaluation score.
+        6. If an API key is provided, the system also performs LLM-based evaluation.
+        7. If multiple documents are uploaded, similarity analysis is performed.
+        8. The user can download document analysis and similarity reports.
         """
     )
 
@@ -336,7 +363,68 @@ def get_quality_label(score):
 
 
 # -----------------------------
-# 7. SIMILARITY ANALYSIS
+# 7. LLM-BASED EVALUATION
+# -----------------------------
+
+def generate_llm_evaluation(
+    api_key,
+    model_name,
+    document_text,
+    summary,
+    keywords,
+    category
+):
+    if not api_key:
+        return "LLM evaluation was skipped because no API key was provided."
+
+    if OpenAI is None:
+        return "LLM evaluation could not run because the openai package is not installed."
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        limited_text = document_text[:3500]
+
+        prompt = f"""
+You are evaluating the output of an Agentic Document Understanding System.
+
+Evaluate the following document analysis output based on these criteria:
+1. Summary accuracy
+2. Summary clarity
+3. Keyword quality
+4. Classification accuracy
+5. Completeness
+
+Give each criterion a score between 1 and 5.
+Then briefly explain each score.
+Finally, provide an overall score and 2 short improvement suggestions.
+
+Document Text:
+{limited_text}
+
+Generated Summary:
+{summary}
+
+Extracted Keywords:
+{", ".join(keywords)}
+
+Predicted Category:
+{category}
+"""
+
+        response = client.responses.create(
+            model=model_name,
+            input=prompt
+        )
+
+        return response.output_text
+
+    except Exception as error:
+        return f"LLM evaluation could not be completed. Error: {error}"
+
+
+# -----------------------------
+# 8. SIMILARITY ANALYSIS
 # -----------------------------
 
 def interpret_similarity(score):
@@ -379,10 +467,10 @@ def calculate_similarity(documents):
 
 
 # -----------------------------
-# 8. AGENT DECISION LOGIC
+# 9. AGENT DECISION LOGIC
 # -----------------------------
 
-def agent_decision(text, number_of_files):
+def agent_decision(text, number_of_files, api_key):
     decisions = []
 
     word_count = len(text.split())
@@ -404,11 +492,16 @@ def agent_decision(text, number_of_files):
     else:
         decisions.append("Single document uploaded. The system will skip similarity analysis.")
 
+    if api_key:
+        decisions.append("API key detected. The system will run optional LLM-based evaluation.")
+    else:
+        decisions.append("No API key provided. The system will use rule-based evaluation only.")
+
     return decisions
 
 
 # -----------------------------
-# 9. REPORT GENERATION
+# 10. REPORT GENERATION
 # -----------------------------
 
 def generate_analysis_report(
@@ -420,7 +513,8 @@ def generate_analysis_report(
     category_reason,
     evaluation_score,
     evaluation_feedback,
-    decisions
+    decisions,
+    llm_evaluation
 ):
     quality_label = get_quality_label(evaluation_score)
 
@@ -453,17 +547,20 @@ Extracted Keywords:
 Generated Summary:
 {summary}
 
-Evaluation:
+Rule-Based Evaluation:
 - Score: {evaluation_score}/5
 - Quality Label: {quality_label}
 
-Evaluation Feedback:
+Rule-Based Evaluation Feedback:
 """
 
     for feedback in evaluation_feedback:
         report += f"- {feedback}\n"
 
-    report += """
+    report += f"""
+
+LLM-Based Evaluation:
+{llm_evaluation}
 
 End of Report
 ========================
@@ -500,7 +597,7 @@ End of Similarity Report
 
 
 # -----------------------------
-# 10. STREAMLIT INTERFACE
+# 11. STREAMLIT INTERFACE
 # -----------------------------
 
 uploaded_files = st.file_uploader(
@@ -534,8 +631,17 @@ if uploaded_files:
                 category
             )
 
-            decisions = agent_decision(clean_text, len(uploaded_files))
+            decisions = agent_decision(clean_text, len(uploaded_files), openai_api_key)
             quality_label = get_quality_label(evaluation_score)
+
+            llm_evaluation = generate_llm_evaluation(
+                openai_api_key,
+                llm_model,
+                clean_text,
+                summary,
+                keywords,
+                category
+            )
 
             processed_documents.append({
                 "file_name": uploaded_file.name,
@@ -546,7 +652,8 @@ if uploaded_files:
                 "category_reason": category_reason,
                 "evaluation_score": evaluation_score,
                 "evaluation_feedback": evaluation_feedback,
-                "decisions": decisions
+                "decisions": decisions,
+                "llm_evaluation": llm_evaluation
             })
 
             col1, col2 = st.columns(2)
@@ -569,7 +676,7 @@ if uploaded_files:
                 st.write("### Extracted Keywords")
                 st.write(", ".join(keywords))
 
-                st.write("### Evaluation Score")
+                st.write("### Rule-Based Evaluation Score")
                 st.metric(
                     label="Output Quality",
                     value=f"{evaluation_score}/5",
@@ -582,6 +689,14 @@ if uploaded_files:
             st.write("### Generated Summary")
             st.info(summary)
 
+            st.write("### LLM-Based Evaluation")
+            if openai_api_key:
+                st.success("LLM-based evaluation was generated.")
+                st.write(llm_evaluation)
+            else:
+                st.warning("LLM evaluation skipped. Enter an OpenAI API key in the sidebar to enable it.")
+                st.write(llm_evaluation)
+
             report_text = generate_analysis_report(
                 uploaded_file.name,
                 clean_text,
@@ -591,7 +706,8 @@ if uploaded_files:
                 category_reason,
                 evaluation_score,
                 evaluation_feedback,
-                decisions
+                decisions,
+                llm_evaluation
             )
 
             st.download_button(
