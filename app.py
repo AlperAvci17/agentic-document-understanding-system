@@ -25,9 +25,8 @@ st.set_page_config(
 st.sidebar.title("📄 Project Info")
 st.sidebar.write("**Agentic Document Understanding System**")
 st.sidebar.write(
-    "This system analyzes uploaded documents, extracts text, "
-    "generates summaries, finds keywords, classifies documents, "
-    "evaluates outputs, and compares multiple documents."
+    "This system analyzes uploaded documents, extracts text, generates summaries, "
+    "finds keywords, classifies documents, evaluates outputs, and compares multiple documents."
 )
 
 st.sidebar.write("### Supported Files")
@@ -44,7 +43,14 @@ st.sidebar.write("- Document classification")
 st.sidebar.write("- Agent decisions")
 st.sidebar.write("- Rule-based evaluation")
 st.sidebar.write("- Similarity analysis")
-st.sidebar.write("- Downloadable report")
+st.sidebar.write("- Downloadable reports")
+
+st.sidebar.write("### Team Members")
+st.sidebar.write("- Alper Avcı")
+st.sidebar.write("- Selin Keskin")
+
+st.sidebar.write("### Course")
+st.sidebar.write("SEN4018 - Agentic AI / Data Science Project")
 
 
 # -----------------------------
@@ -60,6 +66,25 @@ st.write(
     "between multiple documents."
 )
 
+st.info(
+    "This application works as an agentic document analysis assistant. "
+    "It checks the uploaded document, decides which analysis steps are needed, "
+    "and generates structured outputs for the user."
+)
+
+with st.expander("ℹ️ How does the system work?"):
+    st.write(
+        """
+        1. The user uploads one or more documents.
+        2. The system extracts readable text from the files.
+        3. The extracted text is cleaned and preprocessed.
+        4. The agent checks document length and number of uploaded files.
+        5. The system generates a summary, keywords, category, and evaluation score.
+        6. If multiple documents are uploaded, similarity analysis is performed.
+        7. The user can download document analysis and similarity reports.
+        """
+    )
+
 
 # -----------------------------
 # 1. TEXT EXTRACTION FUNCTIONS
@@ -74,6 +99,7 @@ def extract_text_from_pdf(file):
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
+
     except Exception as error:
         st.error(f"PDF text extraction error: {error}")
         return ""
@@ -84,6 +110,7 @@ def extract_text_from_pdf(file):
 def extract_text_from_txt(file):
     try:
         return file.read().decode("utf-8", errors="ignore")
+
     except Exception as error:
         st.error(f"TXT text extraction error: {error}")
         return ""
@@ -96,6 +123,7 @@ def extract_text_from_docx(file):
         document = Document(file)
         for paragraph in document.paragraphs:
             text += paragraph.text + "\n"
+
     except Exception as error:
         st.error(f"DOCX text extraction error: {error}")
         return ""
@@ -108,10 +136,13 @@ def extract_text(file):
 
     if file_name.endswith(".pdf"):
         return extract_text_from_pdf(file)
+
     elif file_name.endswith(".txt"):
         return extract_text_from_txt(file)
+
     elif file_name.endswith(".docx"):
         return extract_text_from_docx(file)
+
     else:
         return ""
 
@@ -293,9 +324,29 @@ def evaluate_output(text, summary, keywords, category):
     return score, feedback
 
 
+def get_quality_label(score):
+    if score == 5:
+        return "🟢 Excellent"
+    elif score == 4:
+        return "🟢 Good"
+    elif score == 3:
+        return "🟡 Acceptable"
+    else:
+        return "🔴 Needs Improvement"
+
+
 # -----------------------------
 # 7. SIMILARITY ANALYSIS
 # -----------------------------
+
+def interpret_similarity(score):
+    if score >= 0.70:
+        return "High Similarity"
+    elif score >= 0.40:
+        return "Medium Similarity"
+    else:
+        return "Low Similarity"
+
 
 def calculate_similarity(documents):
     texts = [doc["clean_text"] for doc in documents]
@@ -311,10 +362,13 @@ def calculate_similarity(documents):
 
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
+                score = round(similarity_matrix[i][j], 2)
+
                 rows.append({
                     "Document 1": names[i],
                     "Document 2": names[j],
-                    "Similarity Score": round(similarity_matrix[i][j], 2)
+                    "Similarity Score": score,
+                    "Interpretation": interpret_similarity(score)
                 })
 
         return pd.DataFrame(rows)
@@ -368,6 +422,8 @@ def generate_analysis_report(
     evaluation_feedback,
     decisions
 ):
+    quality_label = get_quality_label(evaluation_score)
+
     report = f"""
 DOCUMENT ANALYSIS REPORT
 ========================
@@ -399,6 +455,7 @@ Generated Summary:
 
 Evaluation:
 - Score: {evaluation_score}/5
+- Quality Label: {quality_label}
 
 Evaluation Feedback:
 """
@@ -424,11 +481,13 @@ SIMILARITY ANALYSIS REPORT
 
     if similarity_df.empty:
         report += "No similarity result was generated.\n"
+
     else:
         for _, row in similarity_df.iterrows():
             report += f"Document 1: {row['Document 1']}\n"
             report += f"Document 2: {row['Document 2']}\n"
             report += f"Similarity Score: {row['Similarity Score']}\n"
+            report += f"Interpretation: {row['Interpretation']}\n"
             report += "--------------------------\n"
 
     report += """
@@ -454,10 +513,11 @@ processed_documents = []
 
 if uploaded_files:
     st.success(f"{len(uploaded_files)} file(s) uploaded successfully.")
+    st.header("📌 Analysis Results")
 
     for index, uploaded_file in enumerate(uploaded_files):
         st.divider()
-        st.subheader(f"📌 File: {uploaded_file.name}")
+        st.subheader(f"📄 File: {uploaded_file.name}")
 
         extracted_text = extract_text(uploaded_file)
         clean_text = preprocess_text(extracted_text)
@@ -475,6 +535,7 @@ if uploaded_files:
             )
 
             decisions = agent_decision(clean_text, len(uploaded_files))
+            quality_label = get_quality_label(evaluation_score)
 
             processed_documents.append({
                 "file_name": uploaded_file.name,
@@ -509,7 +570,11 @@ if uploaded_files:
                 st.write(", ".join(keywords))
 
                 st.write("### Evaluation Score")
-                st.write(f"**Score:** {evaluation_score}/5")
+                st.metric(
+                    label="Output Quality",
+                    value=f"{evaluation_score}/5",
+                    delta=quality_label
+                )
 
                 for item in evaluation_feedback:
                     st.write(f"- {item}")
@@ -566,6 +631,7 @@ if uploaded_files:
                 mime="text/plain",
                 key="download_similarity_report"
             )
+
         else:
             st.warning("Similarity analysis could not generate a result.")
 
