@@ -7,18 +7,57 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
+# -----------------------------
+# PAGE CONFIGURATION
+# -----------------------------
+
 st.set_page_config(
     page_title="Agentic Document Understanding System",
     page_icon="📄",
     layout="wide"
 )
 
+
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+
+st.sidebar.title("📄 Project Info")
+st.sidebar.write("**Agentic Document Understanding System**")
+st.sidebar.write(
+    "This system analyzes uploaded documents, extracts text, "
+    "generates summaries, finds keywords, classifies documents, "
+    "evaluates outputs, and compares multiple documents."
+)
+
+st.sidebar.write("### Supported Files")
+st.sidebar.write("- PDF")
+st.sidebar.write("- TXT")
+st.sidebar.write("- DOCX")
+
+st.sidebar.write("### Main Features")
+st.sidebar.write("- Text extraction")
+st.sidebar.write("- Preprocessing")
+st.sidebar.write("- Summarization")
+st.sidebar.write("- Keyword extraction")
+st.sidebar.write("- Document classification")
+st.sidebar.write("- Agent decisions")
+st.sidebar.write("- Rule-based evaluation")
+st.sidebar.write("- Similarity analysis")
+st.sidebar.write("- Downloadable report")
+
+
+# -----------------------------
+# MAIN TITLE
+# -----------------------------
+
 st.title("📄 Agentic Document Understanding System")
 
 st.write(
     "Upload PDF, TXT, or DOCX documents. "
     "The system will extract text, clean it, summarize it, extract keywords, "
-    "classify the document, and evaluate the output."
+    "classify the document, evaluate the output, and calculate similarity "
+    "between multiple documents."
 )
 
 
@@ -28,23 +67,39 @@ st.write(
 
 def extract_text_from_pdf(file):
     text = ""
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+
+    try:
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as error:
+        st.error(f"PDF text extraction error: {error}")
+        return ""
+
     return text
 
 
 def extract_text_from_txt(file):
-    return file.read().decode("utf-8", errors="ignore")
+    try:
+        return file.read().decode("utf-8", errors="ignore")
+    except Exception as error:
+        st.error(f"TXT text extraction error: {error}")
+        return ""
 
 
 def extract_text_from_docx(file):
-    document = Document(file)
     text = ""
-    for paragraph in document.paragraphs:
-        text += paragraph.text + "\n"
+
+    try:
+        document = Document(file)
+        for paragraph in document.paragraphs:
+            text += paragraph.text + "\n"
+    except Exception as error:
+        st.error(f"DOCX text extraction error: {error}")
+        return ""
+
     return text
 
 
@@ -66,9 +121,13 @@ def extract_text(file):
 # -----------------------------
 
 def preprocess_text(text):
+    if not text:
+        return ""
+
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)
     text = text.strip()
+
     return text
 
 
@@ -80,8 +139,10 @@ def generate_simple_summary(text, max_sentences=3):
     sentences = re.split(r"(?<=[.!?])\s+", text)
 
     clean_sentences = []
+
     for sentence in sentences:
         sentence = sentence.strip()
+
         if len(sentence.split()) > 4:
             clean_sentences.append(sentence)
 
@@ -89,6 +150,7 @@ def generate_simple_summary(text, max_sentences=3):
         return "The text is too short to generate a meaningful summary."
 
     summary = " ".join(clean_sentences[:max_sentences])
+
     return summary
 
 
@@ -104,14 +166,22 @@ def extract_keywords(text, top_n=8):
         )
 
         tfidf_matrix = vectorizer.fit_transform([text])
-        keywords = vectorizer.get_feature_names_out()
-        return list(keywords)
+        feature_names = vectorizer.get_feature_names_out()
+        scores = tfidf_matrix.toarray()[0]
 
-    except:
+        keyword_scores = list(zip(feature_names, scores))
+        keyword_scores = sorted(keyword_scores, key=lambda x: x[1], reverse=True)
+
+        keywords = [keyword for keyword, score in keyword_scores]
+
+        return keywords
+
+    except Exception:
         words = re.findall(r"\b\w+\b", text.lower())
         words = [word for word in words if len(word) > 4]
 
         unique_words = []
+
         for word in words:
             if word not in unique_words:
                 unique_words.append(word)
@@ -178,6 +248,7 @@ def classify_document(text):
         return "Other", "No strong category keywords were found."
 
     reason = f"The document contains keywords related to {best_category}."
+
     return best_category, reason
 
 
@@ -230,21 +301,27 @@ def calculate_similarity(documents):
     texts = [doc["clean_text"] for doc in documents]
     names = [doc["file_name"] for doc in documents]
 
-    vectorizer = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = vectorizer.fit_transform(texts)
+    try:
+        vectorizer = TfidfVectorizer(stop_words="english")
+        tfidf_matrix = vectorizer.fit_transform(texts)
 
-    similarity_matrix = cosine_similarity(tfidf_matrix)
+        similarity_matrix = cosine_similarity(tfidf_matrix)
 
-    rows = []
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            rows.append({
-                "Document 1": names[i],
-                "Document 2": names[j],
-                "Similarity Score": round(similarity_matrix[i][j], 2)
-            })
+        rows = []
 
-    return pd.DataFrame(rows)
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                rows.append({
+                    "Document 1": names[i],
+                    "Document 2": names[j],
+                    "Similarity Score": round(similarity_matrix[i][j], 2)
+                })
+
+        return pd.DataFrame(rows)
+
+    except Exception as error:
+        st.warning(f"Similarity analysis could not be completed: {error}")
+        return pd.DataFrame()
 
 
 # -----------------------------
@@ -270,7 +347,6 @@ def agent_decision(text, number_of_files):
 
     if number_of_files > 1:
         decisions.append("Multiple documents uploaded. The system should calculate document similarity.")
-
     else:
         decisions.append("Single document uploaded. The system will skip similarity analysis.")
 
@@ -278,7 +354,94 @@ def agent_decision(text, number_of_files):
 
 
 # -----------------------------
-# 9. STREAMLIT INTERFACE
+# 9. REPORT GENERATION
+# -----------------------------
+
+def generate_analysis_report(
+    file_name,
+    clean_text,
+    summary,
+    keywords,
+    category,
+    category_reason,
+    evaluation_score,
+    evaluation_feedback,
+    decisions
+):
+    report = f"""
+DOCUMENT ANALYSIS REPORT
+========================
+
+File Name:
+{file_name}
+
+Basic Document Information:
+- Text Length: {len(clean_text)} characters
+- Word Count: {len(clean_text.split())} words
+
+Document Category:
+- Category: {category}
+- Reason: {category_reason}
+
+Agent Decisions:
+"""
+
+    for decision in decisions:
+        report += f"- {decision}\n"
+
+    report += f"""
+
+Extracted Keywords:
+{", ".join(keywords)}
+
+Generated Summary:
+{summary}
+
+Evaluation:
+- Score: {evaluation_score}/5
+
+Evaluation Feedback:
+"""
+
+    for feedback in evaluation_feedback:
+        report += f"- {feedback}\n"
+
+    report += """
+
+End of Report
+========================
+"""
+
+    return report
+
+
+def generate_similarity_report(similarity_df):
+    report = """
+SIMILARITY ANALYSIS REPORT
+==========================
+
+"""
+
+    if similarity_df.empty:
+        report += "No similarity result was generated.\n"
+    else:
+        for _, row in similarity_df.iterrows():
+            report += f"Document 1: {row['Document 1']}\n"
+            report += f"Document 2: {row['Document 2']}\n"
+            report += f"Similarity Score: {row['Similarity Score']}\n"
+            report += "--------------------------\n"
+
+    report += """
+
+End of Similarity Report
+========================
+"""
+
+    return report
+
+
+# -----------------------------
+# 10. STREAMLIT INTERFACE
 # -----------------------------
 
 uploaded_files = st.file_uploader(
@@ -292,7 +455,7 @@ processed_documents = []
 if uploaded_files:
     st.success(f"{len(uploaded_files)} file(s) uploaded successfully.")
 
-    for uploaded_file in uploaded_files:
+    for index, uploaded_file in enumerate(uploaded_files):
         st.divider()
         st.subheader(f"📌 File: {uploaded_file.name}")
 
@@ -303,12 +466,14 @@ if uploaded_files:
             summary = generate_simple_summary(clean_text)
             keywords = extract_keywords(clean_text)
             category, category_reason = classify_document(clean_text)
+
             evaluation_score, evaluation_feedback = evaluate_output(
                 clean_text,
                 summary,
                 keywords,
                 category
             )
+
             decisions = agent_decision(clean_text, len(uploaded_files))
 
             processed_documents.append({
@@ -317,7 +482,10 @@ if uploaded_files:
                 "summary": summary,
                 "keywords": keywords,
                 "category": category,
-                "evaluation_score": evaluation_score
+                "category_reason": category_reason,
+                "evaluation_score": evaluation_score,
+                "evaluation_feedback": evaluation_feedback,
+                "decisions": decisions
             })
 
             col1, col2 = st.columns(2)
@@ -349,12 +517,32 @@ if uploaded_files:
             st.write("### Generated Summary")
             st.info(summary)
 
+            report_text = generate_analysis_report(
+                uploaded_file.name,
+                clean_text,
+                summary,
+                keywords,
+                category,
+                category_reason,
+                evaluation_score,
+                evaluation_feedback,
+                decisions
+            )
+
+            st.download_button(
+                label="📥 Download Analysis Report",
+                data=report_text,
+                file_name=f"{uploaded_file.name}_analysis_report.txt",
+                mime="text/plain",
+                key=f"download_report_{index}_{uploaded_file.name}"
+            )
+
             st.write("### Extracted Text Preview")
             st.text_area(
                 "First 1500 characters",
                 clean_text[:1500],
                 height=250,
-                key=uploaded_file.name
+                key=f"preview_{index}_{uploaded_file.name}"
             )
 
         else:
@@ -365,7 +553,21 @@ if uploaded_files:
         st.header("📊 Similarity Analysis Between Documents")
 
         similarity_df = calculate_similarity(processed_documents)
-        st.dataframe(similarity_df)
+
+        if not similarity_df.empty:
+            st.dataframe(similarity_df)
+
+            similarity_report = generate_similarity_report(similarity_df)
+
+            st.download_button(
+                label="📥 Download Similarity Report",
+                data=similarity_report,
+                file_name="similarity_analysis_report.txt",
+                mime="text/plain",
+                key="download_similarity_report"
+            )
+        else:
+            st.warning("Similarity analysis could not generate a result.")
 
 else:
     st.info("Please upload at least one document.")
