@@ -1,4 +1,13 @@
 # Agentic Document Understanding System
+## Live Demo
+
+You can access the deployed Streamlit application from the link below:
+
+https://agentic-document-understanding-system.streamlit.app
+
+## GitHub Repository
+
+https://github.com/selinkeskinn/agentic-document-understanding-system
 
 ## Project Overview
 
