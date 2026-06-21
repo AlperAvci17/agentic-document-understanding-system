@@ -27,6 +27,28 @@ st.set_page_config(
 # SIDEBAR
 # -----------------------------
 
+
+# -----------------------------
+# CUSTOM CSS - WIDE SUMMARY BOXES
+# -----------------------------
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 95% !important;
+        padding-left: 3rem !important;
+        padding-right: 3rem !important;
+    }
+
+    div[data-testid="stAlert"] {
+        width: min(90vw, 1200px) !important;
+        max-width: 90vw !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.sidebar.title("📄 Project Info")
 st.sidebar.write("**Agentic Document Understanding System**")
 st.sidebar.write(
@@ -72,11 +94,14 @@ openai_api_key = st.sidebar.text_input(
     help="This key is used only during this session and is not stored in the code."
 )
 
-llm_model = st.sidebar.text_input(
+llm_model = "gpt-4o-mini"
+st.sidebar.text_input(
     "LLM Model",
-    value="gpt-4o-mini",
-    help="If this model is unavailable for your account, you can replace it with another available OpenAI model."
+    value=llm_model,
+    disabled=True,
+    help="This model is fixed and read-only."
 )
+
 
 
 # -----------------------------
