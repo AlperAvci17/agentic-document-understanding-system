@@ -35,14 +35,14 @@ st.markdown(
     """
     <style>
     .block-container {
-        max-width: 95% !important;
+        max-width: 88% !important;
         padding-left: 3rem !important;
         padding-right: 3rem !important;
     }
 
     div[data-testid="stAlert"] {
-        width: min(90vw, 1200px) !important;
-        max-width: 90vw !important;
+        width: min(78vw, 1050px) !important;
+        max-width: 78vw !important;
     }
     </style>
     """,
