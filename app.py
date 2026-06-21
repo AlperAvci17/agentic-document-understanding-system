@@ -47,7 +47,7 @@ st.sidebar.write("- Keyword extraction")
 st.sidebar.write("- Document classification")
 st.sidebar.write("- Agent decisions")
 st.sidebar.write("- Rule-based evaluation")
-st.sidebar.write("- Optional LLM-based evaluation")
+st.sidebar.write("- LLM-based evaluation")
 st.sidebar.write("- Similarity analysis")
 st.sidebar.write("- Downloadable reports")
 
@@ -60,7 +60,7 @@ st.sidebar.write("SEN4018 - Agentic AI / Data Science Project")
 
 st.sidebar.divider()
 
-st.sidebar.write("### Optional LLM Evaluation")
+st.sidebar.write("### LLM Evaluation")
 st.sidebar.write(
     "Enter an OpenAI API key if you want the system to perform LLM-based evaluation. "
     "If you leave it empty, the app will still work with rule-based evaluation."
@@ -365,7 +365,49 @@ def get_quality_label(score):
 # -----------------------------
 # 7. LLM-BASED EVALUATION
 # -----------------------------
+def generate_llm_summary(api_key, model_name, document_text):
+    """
+    Generate an LLM-based summary of the document.
+    If API key is not available or an error occurs, return None and a status message.
+    """
 
+    if not api_key:
+        return None, "LLM summary skipped because no API key was provided."
+
+    if OpenAI is None:
+        return None, "LLM summary could not run because the openai package is not installed."
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        limited_text = document_text[:3500]
+
+        prompt = f"""
+You are a document summarization assistant.
+
+Summarize the following document clearly and concisely.
+
+The summary should:
+- Capture the main ideas of the document
+- Include important concepts
+- Avoid unnecessary details
+- Be written in one clear paragraph
+- Be understandable for a student
+
+Document Text:
+{limited_text}
+"""
+
+        response = client.responses.create(
+            model=model_name,
+            input=prompt
+        )
+
+        return response.output_text, "LLM summary was generated."
+
+    except Exception as error:
+        return None, f"LLM summary could not be completed. Error: {error}"
+        
 def generate_llm_evaluation(
     api_key,
     model_name,
@@ -395,9 +437,11 @@ Evaluate the following document analysis output based on these criteria:
 4. Classification accuracy
 5. Completeness
 
-Give each criterion a score between 1 and 5.
-Then briefly explain each score.
-Finally, provide an overall score and 2 short improvement suggestions.
+At the beginning of your response, write the final score exactly in this format:
+Overall Score: X/5
+Then give each criterion a score between 1 and 5.
+Briefly explain each score.
+Finally, provide 2 short improvement suggestions.
 
 Document Text:
 {limited_text}
@@ -514,7 +558,8 @@ def generate_analysis_report(
     evaluation_score,
     evaluation_feedback,
     decisions,
-    llm_evaluation
+    llm_evaluation,
+    comparison_result
 ):
     quality_label = get_quality_label(evaluation_score)
 
@@ -561,11 +606,22 @@ Rule-Based Evaluation Feedback:
 
 LLM-Based Evaluation:
 {llm_evaluation}
+    
+
+    Rule-Based vs LLM Comparison Agent:
+    - Rule-Based Score: {comparison_result["rule_based_score"]}/5
+    - LLM Score: {comparison_result["llm_score"]}/5
+    - Difference: {comparison_result["difference"]}
+    - Same Result: {comparison_result["same_result"]}
+    - Agreement Level: {comparison_result["agreement_level"]}
+    - Agent Decision: {comparison_result["agent_decision"]}
+    - Explanation: {comparison_result["explanation"]}
+    - Recommendation: {comparison_result["recommendation"]}
+    
 
 End of Report
 ========================
 """
-
     return report
 
 
@@ -594,10 +650,145 @@ End of Similarity Report
 """
 
     return report
+# -----------------------------
+# 11.EVALUATION COMPARISON AGENT
+# -----------------------------
 
+def extract_llm_score_on_5_scale(llm_evaluation_text):
+    """
+    Extract the overall LLM score from text and normalize it to a 5-point scale.
+    Supported formats:
+    - Overall Score: 4/5
+    - Final Score: 8/10
+    - Score: 80/100
+    """
+
+    if not llm_evaluation_text:
+        return None
+
+    text = str(llm_evaluation_text)
+
+    error_keywords = [
+        "skipped",
+        "could not be completed",
+        "error",
+        "failed",
+        "not found",
+        "api key",
+        "not installed"
+    ]
+
+    if any(keyword in text.lower() for keyword in error_keywords):
+        return None
+
+    patterns = [
+        r"overall\s*score\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*/\s*(5|10|100)",
+        r"final\s*score\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*/\s*(5|10|100)",
+        r"total\s*score\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*/\s*(5|10|100)",
+        r"score\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*/\s*(5|10|100)"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+
+        if match:
+            score = float(match.group(1))
+            max_score = float(match.group(2))
+
+            normalized_score = (score / max_score) * 5
+
+            return round(normalized_score, 2)
+
+    return None
+
+
+def rule_based_vs_llm_agent(rule_based_score, llm_evaluation_text, tolerance=0.5):
+    """
+    Compare rule-based evaluation score and LLM-based evaluation score.
+    Both scores are evaluated on a 5-point scale.
+    """
+
+    llm_score = extract_llm_score_on_5_scale(llm_evaluation_text)
+
+    result = {
+        "agent_name": "Rule-Based vs LLM Comparison Agent",
+        "rule_based_score": rule_based_score,
+        "llm_score": llm_score,
+        "difference": None,
+        "same_result": None,
+        "agreement_level": None,
+        "agent_decision": None,
+        "explanation": None,
+        "recommendation": None
+    }
+
+    if llm_score is None:
+        result["same_result"] = "Unknown"
+        result["agreement_level"] = "LLM score unavailable"
+        result["agent_decision"] = "Comparison could not be completed"
+        result["explanation"] = (
+            "The rule-based score was generated, but the LLM evaluation did not return a valid numeric score."
+        )
+        result["recommendation"] = (
+            "Make sure the LLM output starts with a clear score such as 'Overall Score: 4/5'."
+        )
+        return result
+
+    difference = abs(rule_based_score - llm_score)
+    result["difference"] = round(difference, 2)
+
+    if difference == 0:
+        result["same_result"] = "Yes"
+        result["agreement_level"] = "Exact match"
+        result["agent_decision"] = "Both methods produced the same result"
+        result["explanation"] = (
+            f"Both rule-based evaluation and LLM evaluation gave the same score: {rule_based_score}/5."
+        )
+        result["recommendation"] = (
+            "The result is highly reliable because both evaluation methods agree."
+        )
+
+    elif difference <= tolerance:
+        result["same_result"] = "Almost same"
+        result["agreement_level"] = "High agreement"
+        result["agent_decision"] = "Both methods produced very similar results"
+        result["explanation"] = (
+            f"Rule-based score is {rule_based_score}/5 and LLM score is {llm_score}/5. "
+            f"The difference is {result['difference']}, which is within the tolerance limit."
+        )
+        result["recommendation"] = (
+            "The result can be accepted. Small differences are normal because LLM evaluation is more flexible."
+        )
+
+    elif difference <= 1.5:
+        result["same_result"] = "Partially"
+        result["agreement_level"] = "Medium agreement"
+        result["agent_decision"] = "The methods are partially aligned"
+        result["explanation"] = (
+            f"Rule-based score is {rule_based_score}/5 and LLM score is {llm_score}/5. "
+            f"The difference is {result['difference']}, so the results are close but not identical."
+        )
+        result["recommendation"] = (
+            "Manual review is recommended, or the rule-based criteria can be improved."
+        )
+
+    else:
+        result["same_result"] = "No"
+        result["agreement_level"] = "Low agreement"
+        result["agent_decision"] = "The methods produced different results"
+        result["explanation"] = (
+            f"Rule-based score is {rule_based_score}/5 and LLM score is {llm_score}/5. "
+            f"The difference is {result['difference']}, which shows a significant disagreement."
+        )
+        result["recommendation"] = (
+            "Manual review is strongly recommended. The rule-based evaluator may be too strict, "
+            "or the LLM may be interpreting the document differently."
+        )
+
+    return result
 
 # -----------------------------
-# 11. STREAMLIT INTERFACE
+# 12. STREAMLIT INTERFACE
 # -----------------------------
 
 uploaded_files = st.file_uploader(
@@ -620,7 +811,23 @@ if uploaded_files:
         clean_text = preprocess_text(extracted_text)
 
         if clean_text:
-            summary = generate_simple_summary(clean_text)
+            # -----------------------------
+            # RULE-BASED SUMMARY
+            # -----------------------------
+            rule_based_summary = generate_simple_summary(clean_text)
+            # Existing summary variable is kept for rule-based evaluation and report compatibility
+            summary = rule_based_summary
+
+            # -----------------------------
+            # LLM-BASED SUMMARY
+            # -----------------------------
+            llm_summary, llm_summary_status = generate_llm_summary(
+                openai_api_key,
+                llm_model,
+                clean_text
+            )
+
+           
             keywords = extract_keywords(clean_text)
             category, category_reason = classify_document(clean_text)
 
@@ -630,7 +837,6 @@ if uploaded_files:
                 keywords,
                 category
             )
-
             decisions = agent_decision(clean_text, len(uploaded_files), openai_api_key)
             quality_label = get_quality_label(evaluation_score)
 
@@ -646,6 +852,8 @@ if uploaded_files:
             processed_documents.append({
                 "file_name": uploaded_file.name,
                 "clean_text": clean_text,
+                "rule_based_summary": rule_based_summary,
+                "llm_summary": llm_summary if llm_summary else "LLM summary not available.",
                 "summary": summary,
                 "keywords": keywords,
                 "category": category,
@@ -671,7 +879,11 @@ if uploaded_files:
                 st.write("### Document Category")
                 st.write(f"**Category:** {category}")
                 st.write(f"**Reason:** {category_reason}")
-
+                st.write("### Rule-Based Summary")
+                st.info(rule_based_summary)
+            
+                st.write("### LLM-Based Summary")
+                
             with col2:
                 st.write("### Extracted Keywords")
                 st.write(", ".join(keywords))
@@ -682,13 +894,18 @@ if uploaded_files:
                     value=f"{evaluation_score}/5",
                     delta=quality_label
                 )
-
+                
                 for item in evaluation_feedback:
                     st.write(f"- {item}")
 
-            st.write("### Generated Summary")
-            st.info(summary)
+            
 
+            if llm_summary:
+                st.success(llm_summary_status)
+                st.info(llm_summary)
+            else:
+                st.warning(llm_summary_status)
+                    
             st.write("### LLM-Based Evaluation")
             if openai_api_key:
                 st.success("LLM-based evaluation was generated.")
@@ -696,6 +913,57 @@ if uploaded_files:
             else:
                 st.warning("LLM evaluation skipped. Enter an OpenAI API key in the sidebar to enable it.")
                 st.write(llm_evaluation)
+
+            comparison_result = rule_based_vs_llm_agent(
+                rule_based_score=evaluation_score,
+                llm_evaluation_text=llm_evaluation,
+                tolerance=0.5
+            )
+
+            st.write("### 🤖 Rule-Based vs LLM Comparison Agent")
+
+            comp_col1, comp_col2, comp_col3 = st.columns(3)
+            with comp_col1:
+                st.metric(
+                    "Rule-Based Score",
+                    f"{comparison_result['rule_based_score']}/5"
+                    if comparison_result["rule_based_score"] is not None
+                    else "N/A"
+                )
+
+            with comp_col2:
+                st.metric(
+                    "LLM Score",
+                    f"{comparison_result['llm_score']}/5"
+                    if comparison_result["llm_score"] is not None
+                    else "N/A"
+                )
+
+            with comp_col3:
+                st.metric(
+                    "Difference",
+                    comparison_result["difference"]
+                    if comparison_result["difference"] is not None
+                    else "N/A"
+                )
+
+            st.write(f"**Same Result:** {comparison_result['same_result']}")
+            st.write(f"**Agreement Level:** {comparison_result['agreement_level']}")
+            st.write(f"**Agent Decision:** {comparison_result['agent_decision']}")
+
+            st.info(comparison_result["explanation"])
+            st.write(f"**Recommendation:** {comparison_result['recommendation']}")
+
+            if comparison_result["same_result"] == "Yes":
+                st.success("Rule-based and LLM evaluations give the same result.")
+            elif comparison_result["same_result"] == "Almost same":
+                st.success("Rule-based and LLM evaluations are very similar.")
+            elif comparison_result["same_result"] == "Partially":
+                st.warning("Rule-based and LLM evaluations are partially similar.")
+            elif comparison_result["same_result"] == "No":
+                st.error("Rule-based and LLM evaluations are different.")
+            else:
+                st.warning("Comparison could not be completed.")
 
             report_text = generate_analysis_report(
                 uploaded_file.name,
@@ -707,7 +975,8 @@ if uploaded_files:
                 evaluation_score,
                 evaluation_feedback,
                 decisions,
-                llm_evaluation
+                llm_evaluation,
+                comparison_result
             )
 
             st.download_button(
@@ -725,11 +994,9 @@ if uploaded_files:
                 height=250,
                 key=f"preview_{index}_{uploaded_file.name}"
             )
-
         else:
             st.warning("No readable text could be extracted from this file.")
-
-    if len(processed_documents) > 1:
+if len(processed_documents) > 1:
         st.divider()
         st.header("📊 Similarity Analysis Between Documents")
 
@@ -752,4 +1019,4 @@ if uploaded_files:
             st.warning("Similarity analysis could not generate a result.")
 
 else:
-    st.info("Please upload at least one document.")
+        st.info("Please upload at least one document.")
